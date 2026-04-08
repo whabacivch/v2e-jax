@@ -13,6 +13,9 @@ except ImportError as e:
     raise ImportError("install pillow: pip install pillow") from e
 
 
+_OPENCV_CAMERA_HINT = 'video loading requires OpenCV; install camera support with: pip install -e ".[camera]"'
+
+
 def _natural_sort_paths(paths: list[Path]) -> list[Path]:
     def key(p: Path) -> tuple[list[int | str], str]:
         s = p.stem
@@ -122,7 +125,7 @@ def load_video(
     try:
         import cv2
     except ImportError as e:
-        raise ImportError("video loading requires opencv: pip install opencv-python-headless") from e
+        raise ImportError(_OPENCV_CAMERA_HINT) from e
 
     path = video_path.resolve()
     if not path.is_file():

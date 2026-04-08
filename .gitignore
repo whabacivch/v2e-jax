@@ -10,3 +10,5 @@ dist/
 .mypy_cache/
 .ruff_cache/
 harness/grad_smoke.txt
+
+*.egg-info/

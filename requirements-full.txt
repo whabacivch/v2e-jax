@@ -1,0 +1,4 @@
+-r requirements.txt
+equinox>=0.11.0
+matplotlib>=3.8.0
+opencv-python>=4.8.0

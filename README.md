@@ -152,14 +152,66 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -U pip
 pip install -e .
-# GPU users: match the JAX wheel to your CUDA version if needed.
 ```
 
-Verify GPU is visible:
+The base install is intentionally minimal: JAX + NumPy + Pillow.
+
+Optional extras:
+
+```bash
+pip install -e ".[camera]"    # OpenCV-backed camera/video CLIs
+pip install -e ".[viz]"       # plots + MP4 rendering
+pip install -e ".[training]"  # Equinox grad smoke
+pip install -e ".[full]"      # all optional tooling
+```
+
+If you prefer requirements files:
+
+```bash
+pip install -r requirements.txt
+pip install -r requirements-full.txt   # optional full tooling
+```
+
+### Linux backend quickstarts
+
+**Linux CPU**
+
+```bash
+pip install --upgrade pip
+pip install --upgrade jax
+pip install -e .
+v2e-jax-backend-smoke
+```
+
+**Linux NVIDIA GPU**
+
+```bash
+pip install --upgrade pip
+pip install --upgrade "jax[cuda13]"
+pip install -e ".[full]"
+v2e-jax-backend-smoke
+```
+
+**Linux AMD ROCm GPU**
+
+```bash
+pip install --upgrade pip
+pip install --upgrade "jax[rocm7-local]"
+pip install -e ".[full]"
+v2e-jax-backend-smoke
+```
+
+The JAX backend command above is the one to trust first:
 
 ```bash
 python3 -c "import jax; print(jax.devices())"
 ```
+
+`v2e-jax` itself does not contain CUDA- or ROCm-specific kernels. If JAX can
+see the target device, the same emulator code path should run there. In this
+repo, Linux CPU is exercised directly in CI-style smoke runs; NVIDIA and ROCm
+are documented and packaging-ready, but still need hardware validation on those
+actual targets.
 
 ---
 

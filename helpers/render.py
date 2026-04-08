@@ -7,6 +7,10 @@ from pathlib import Path
 import numpy as np
 
 
+_MATPLOTLIB_VIZ_HINT = 'plot rendering requires matplotlib; install viz support with: pip install -e ".[viz]"'
+_OPENCV_VIZ_HINT = 'video rendering requires OpenCV; install viz support with: pip install -e ".[viz]"'
+
+
 def counts_per_timestep(
     on_stack: np.ndarray,
     off_stack: np.ndarray,
@@ -46,10 +50,16 @@ def save_preview_grid(
     max_panels: int = 12,
 ) -> None:
     """Save a matplotlib grid of event overlays (first ``max_panels`` frames at ``stride``)."""
-    import matplotlib
+    try:
+        import matplotlib
+    except ImportError as e:
+        raise ImportError(_MATPLOTLIB_VIZ_HINT) from e
 
     matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError as e:
+        raise ImportError(_MATPLOTLIB_VIZ_HINT) from e
 
     t = on_stack.shape[0]
     idxs = list(range(0, t, stride))[:max_panels]
@@ -86,7 +96,7 @@ def luma_to_bgr_u8(luma: np.ndarray) -> np.ndarray:
     try:
         import cv2
     except ImportError as e:
-        raise ImportError("side-by-side video requires opencv: pip install opencv-python-headless") from e
+        raise ImportError(_OPENCV_VIZ_HINT) from e
     g = np.clip(luma, 0.0, 255.0).astype(np.uint8)
     return cv2.merge([g, g, g])
 
@@ -96,7 +106,7 @@ def overlay_to_bgr_u8(on_frame: np.ndarray, off_frame: np.ndarray) -> np.ndarray
     try:
         import cv2
     except ImportError as e:
-        raise ImportError("side-by-side video requires opencv: pip install opencv-python-headless") from e
+        raise ImportError(_OPENCV_VIZ_HINT) from e
     rgb = overlay_events_rgb(on_frame, off_frame)
     u8 = (np.clip(rgb, 0.0, 1.0) * 255.0).astype(np.uint8)
     return cv2.cvtColor(u8, cv2.COLOR_RGB2BGR)
@@ -119,7 +129,7 @@ def write_side_by_side_mp4(
     try:
         import cv2
     except ImportError as e:
-        raise ImportError("side-by-side video requires opencv: pip install opencv-python-headless") from e
+        raise ImportError(_OPENCV_VIZ_HINT) from e
 
     t_count = int(frames_luma.shape[0])
     if t_count == 0:
@@ -221,7 +231,7 @@ def _decayed_rgb_to_bgr_u8(rgb: np.ndarray) -> np.ndarray:
     try:
         import cv2
     except ImportError as e:
-        raise ImportError("triptych requires opencv: pip install opencv-python-headless") from e
+        raise ImportError(_OPENCV_VIZ_HINT) from e
     u8 = (np.clip(rgb, 0.0, 1.0) * 255.0).astype(np.uint8)
     return cv2.cvtColor(u8, cv2.COLOR_RGB2BGR)
 
@@ -264,7 +274,7 @@ def write_triptych_mp4(
     try:
         import cv2
     except ImportError as e:
-        raise ImportError("triptych requires opencv: pip install opencv-python-headless") from e
+        raise ImportError(_OPENCV_VIZ_HINT) from e
 
     if frames_luma.ndim != 3:
         raise ValueError("frames_luma must be (T,H,W)")

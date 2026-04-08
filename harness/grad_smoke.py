@@ -5,22 +5,26 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import equinox as eqx
 import jax
 import jax.numpy as jnp
 
 
-class ScaleModel(eqx.Module):
-    """Trivial learnable scalar; loss couples to frame sum so gradients are non-trivial."""
-
-    w: jax.Array
-
-
-def loss_fn(model: ScaleModel, x: jnp.ndarray) -> jnp.ndarray:
-    return model.w * jnp.sum(x * x)
-
-
 def main() -> None:
+    try:
+        import equinox as eqx
+    except ImportError as e:
+        raise SystemExit(
+            'grad_smoke requires Equinox. Install training support with: pip install -e ".[training]"'
+        ) from e
+
+    class ScaleModel(eqx.Module):
+        """Trivial learnable scalar; loss couples to frame sum so gradients are non-trivial."""
+
+        w: jax.Array
+
+    def loss_fn(model: ScaleModel, x: jnp.ndarray) -> jnp.ndarray:
+        return model.w * jnp.sum(x * x)
+
     model = ScaleModel(jnp.array(0.5, dtype=jnp.float32))
     x = jnp.ones((4, 8, 8), dtype=jnp.float32)
     loss = loss_fn(model, x)

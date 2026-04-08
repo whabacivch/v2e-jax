@@ -16,8 +16,21 @@ dependencies = [
   "jax>=0.4.30",
   "numpy>=1.26",
   "pillow>=10.0",
+]
+
+[project.optional-dependencies]
+camera = [
+  "opencv-python>=4.8.0",
+]
+viz = [
+  "matplotlib>=3.8.0",
+  "opencv-python>=4.8.0",
+]
+training = [
   "equinox>=0.11.0",
-  "optax>=0.2.0",
+]
+full = [
+  "equinox>=0.11.0",
   "matplotlib>=3.8.0",
   "opencv-python>=4.8.0",
 ]
@@ -29,6 +42,7 @@ v2e-jax-sample-video = "harness.make_sample_video:main"
 v2e-jax-grad-smoke = "harness.grad_smoke:main"
 v2e-jax-adaptation-demo = "harness.adaptation_demo:main"
 v2e-jax-adaptation-check = "harness.adaptation_check:main"
+v2e-jax-backend-smoke = "harness.backend_smoke:main"
 
 [tool.setuptools]
 include-package-data = false

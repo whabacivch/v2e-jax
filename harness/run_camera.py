@@ -32,11 +32,15 @@ for _d in (_ROOT / "src", _ROOT):
     if _s not in sys.path:
         sys.path.insert(0, _s)
 
-import cv2
 import jax
 import jax.numpy as jnp
 import jax.random as jr
 import numpy as np
+
+try:
+    import cv2
+except ImportError:
+    cv2 = None
 
 from v2e_jax import (
     DVSParams,
@@ -49,6 +53,8 @@ from v2e_jax import (
 
 def _opencv_has_gui() -> bool:
     """Return True when the installed OpenCV build exposes HighGUI windows."""
+    if cv2 is None:
+        return False
     try:
         info = cv2.getBuildInformation()
     except Exception:
@@ -165,6 +171,13 @@ def _make_event_overlay_bgr(luma: np.ndarray, on_np: np.ndarray, off_np: np.ndar
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(sys.argv[1:] if argv is None else argv)
+
+    if cv2 is None:
+        print(
+            'ERROR: run_camera requires OpenCV. Install camera support with: pip install -e ".[camera]"',
+            file=sys.stderr,
+        )
+        return 2
 
     if args.display and not _opencv_has_gui():
         print(

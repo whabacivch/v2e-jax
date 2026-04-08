@@ -15,7 +15,10 @@ def main(argv: list[str] | None = None) -> int:
         import cv2
         import numpy as np
     except ImportError as e:
-        raise SystemExit(f"need opencv and numpy: {e}") from e
+        raise SystemExit(
+            f'need OpenCV and NumPy for sample video generation: {e}. '
+            'Install full tooling with: pip install -e ".[full]"'
+        ) from e
 
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--out", type=Path, default=Path("/tmp/v2e_jax_sample.mp4"))

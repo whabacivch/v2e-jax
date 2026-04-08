@@ -1,9 +1,8 @@
-# Pin jax/jaxlib to your CUDA version: https://jax.readthedocs.io/en/latest/installation.html
-# Example GPU: pip install -U "jax[cuda12]"
+# Minimal portable runtime.
+# Install the backend-specific JAX wheel that matches your Linux target:
+#   CPU:          pip install -U jax
+#   NVIDIA GPU:   pip install -U "jax[cuda13]"
+#   AMD ROCm GPU: pip install -U "jax[rocm7-local]"
 jax>=0.4.30
 numpy>=1.26
 pillow>=10.0
-equinox>=0.11.0
-optax>=0.2.0
-matplotlib>=3.8.0
-opencv-python>=4.8.0
