@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "v2e-jax"
+version = "0.1.0"
+description = "JAX-native streaming DVS emulator inspired by SensorsINI/v2e"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+  {name = "Will"},
+]
+dependencies = [
+  "jax>=0.4.30",
+  "numpy>=1.26",
+  "pillow>=10.0",
+  "equinox>=0.11.0",
+  "optax>=0.2.0",
+  "matplotlib>=3.8.0",
+  "opencv-python>=4.8.0",
+]
+
+[project.scripts]
+v2e-jax-clip = "harness.run_clip:main"
+v2e-jax-camera = "harness.run_camera:main"
+v2e-jax-sample-video = "harness.make_sample_video:main"
+v2e-jax-grad-smoke = "harness.grad_smoke:main"
+v2e-jax-adaptation-demo = "harness.adaptation_demo:main"
+v2e-jax-adaptation-check = "harness.adaptation_check:main"
+
+[tool.setuptools]
+include-package-data = false
+
+[tool.setuptools.packages.find]
+where = ["src", "."]
+include = ["v2e_jax", "data", "helpers", "harness"]

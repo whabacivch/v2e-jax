@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+*.npy
+*.mp4
+*.avi
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+harness/grad_smoke.txt
