@@ -7,10 +7,23 @@ Sources
 --video PATH        Any video file — simulates camera I/O via background thread
                     with frame dropping, identical code path to a real camera.
 
+Visualisation modes  (--mode)
+------------------------------
+events   Default. Side-by-side: left=luma, right=green/red event overlay.
+sharpen  Side-by-side: left=luma, right=event-sharpened luma. Event edges
+         are blended into the grayscale image via unsharp masking on the
+         ON+OFF activity map.
+hdr      Side-by-side: left=luma, right=log-Retinex local contrast boost.
+         Lifts shadows and compresses highlights guided by event activity.
+motion   Side-by-side: left=luma, right=events coloured by motion type.
+         Green = looming (approaching), red = receding, blue = lateral.
+         Direct visual odometry (coarse-to-fine Gauss-Newton) is run each
+         frame to derive the geometrically-grounded motion field.
+
 The loop
 --------
-1. Background thread: cap.read() → luma → queue (drops if full, never blocks)
-2. Main thread: dequeue → upsample interval → dvs_step (all on GPU)
+1. Background thread: cap.read() -> luma -> queue (drops if full, never blocks)
+2. Main thread: dequeue -> upsample interval -> dvs_step (all on GPU)
 3. Optional display: pull last sub-frame events to host for OpenCV window
 
 Benchmark mode (--no_display --benchmark_frames N) prints per-frame timing
@@ -66,7 +79,7 @@ def _opencv_has_gui() -> bool:
     return False
 
 
-def default_intrinsics_jax(h: int, w: int):
+def default_intrinsics_jax(h: int, w: int) -> jnp.ndarray:
     """Reasonable pinhole intrinsics for an uncalibrated webcam (~70° FoV)."""
     f = w / (2.0 * 0.700)
     return jnp.array([
@@ -81,7 +94,10 @@ def default_intrinsics_jax(h: int, w: int):
 # ---------------------------------------------------------------------------
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
-    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     src = p.add_mutually_exclusive_group(required=True)
     src.add_argument("--device", type=int, default=None, help="V4L2/OpenCV camera index")
     src.add_argument("--video", type=Path, default=None, help="video file (simulates camera I/O)")
@@ -101,11 +117,23 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         "--adaptation_rate_hz",
         type=float,
         default=0.0,
-        help="reference adaptation rate toward the filtered signal; 0 disables recovery adaptation",
+        help="reference adaptation rate toward the filtered signal; 0 disables",
+    )
+    p.add_argument(
+        "--mode",
+        choices=["events", "sharpen", "hdr", "motion"],
+        default="events",
+        help=(
+            "visualisation mode: "
+            "'events' = green/red event overlay (default), "
+            "'sharpen' = event edge unsharp masking, "
+            "'hdr' = log-Retinex local contrast boost (lifts shadows), "
+            "'motion' = events coloured by looming/lateral/receding"
+        ),
     )
     p.add_argument(
         "--display", action=argparse.BooleanOptionalAction, default=True,
-        help="show OpenCV event overlay window (forces one host sync per frame)",
+        help="show OpenCV window (forces one host sync per frame)",
     )
     p.add_argument(
         "--benchmark_frames", type=int, default=None,
@@ -152,17 +180,45 @@ def _capture_thread(
 # Display helpers
 # ---------------------------------------------------------------------------
 
-def _make_event_overlay_bgr(luma: np.ndarray, on_np: np.ndarray, off_np: np.ndarray) -> np.ndarray:
-    """Side-by-side: left=luma, right=event overlay (green=ON, red=OFF)."""
-    h, w = luma.shape
-    g = np.clip(luma, 0, 255).astype(np.uint8)
-    left = cv2.merge([g, g, g])
-    rgb = np.ones((h, w, 3), dtype=np.uint8) * 240
-    rgb[on_np.astype(bool)] = (40, 200, 40)
-    rgb[off_np.astype(bool)] = (200, 40, 40)
-    right = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+def _side_by_side(left_u8: np.ndarray, right_bgr: np.ndarray) -> np.ndarray:
+    """Concatenate a grey left panel and a BGR right panel with a divider."""
+    h = left_u8.shape[0]
+    left_bgr = cv2.merge([left_u8, left_u8, left_u8])
     divider = np.zeros((h, 2, 3), dtype=np.uint8)
-    return np.concatenate([left, divider, right], axis=1)
+    return np.concatenate([left_bgr, divider, right_bgr], axis=1)
+
+
+def _vis_events(luma_np: np.ndarray, on_np: np.ndarray, off_np: np.ndarray) -> np.ndarray:
+    """Standard green/red event overlay."""
+    h, w = luma_np.shape
+    g = np.clip(luma_np, 0, 255).astype(np.uint8)
+    rgb = np.full((h, w, 3), 240, dtype=np.uint8)
+    rgb[on_np] = (40, 200, 40)
+    rgb[off_np] = (200, 40, 40)
+    right = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+    return _side_by_side(g, right)
+
+
+def _vis_sharpen(luma_np: np.ndarray, sharp_jax: jnp.ndarray) -> np.ndarray:
+    """Event-sharpened luma on the right."""
+    g = np.clip(luma_np, 0, 255).astype(np.uint8)
+    sharp_np = np.asarray(jnp.clip(sharp_jax * 255.0, 0, 255)).astype(np.uint8)
+    right = cv2.merge([sharp_np, sharp_np, sharp_np])
+    return _side_by_side(g, right)
+
+
+def _vis_motion(
+    luma_np: np.ndarray,
+    looming: np.ndarray,
+    lateral: np.ndarray,
+    event_mask: np.ndarray,
+) -> np.ndarray:
+    """Motion-coloured event overlay (green=approach, red=recede, blue=lateral)."""
+    from v2e_jax.motion_field_vis import motion_colors_rgb_u8
+    g = np.clip(luma_np, 0, 255).astype(np.uint8)
+    colored_rgb = motion_colors_rgb_u8(looming, lateral, event_mask)
+    right = cv2.cvtColor(colored_rgb, cv2.COLOR_RGB2BGR)
+    return _side_by_side(g, right)
 
 
 # ---------------------------------------------------------------------------
@@ -233,16 +289,55 @@ def main(argv: list[str] | None = None) -> int:
     state = dvs_init(f0_jax, t0, pos_map, neg_map, params)
     step_fn = make_dvs_step_fn(params, key_r)
 
-    # --- JIT warmup ---
-    print(f"Warming up JIT ({h}x{w}, steps={args.steps_per_interval})...", flush=True)
+    # --- JIT warmup: DVS core (always) ---
+    print(f"Warming up JIT [{args.mode} mode] ({h}x{w}, steps={args.steps_per_interval})...", flush=True)
     dt_warmup = jnp.float32(1.0 / args.fps / args.steps_per_interval)
     _s, _on, _off = step_fn(state, f0_jax, t0, dt_warmup)
     jax.block_until_ready(_on)
     _sf, _st = upsample_interval_linear(f0_jax, f0_jax, t0, t0, args.steps_per_interval)
     jax.block_until_ready(_sf)
+
+    # --- JIT warmup: mode-specific ---
+    _dummy_f = jnp.zeros((h, w), jnp.float32)
+    _dummy_counts = jnp.zeros((h, w), jnp.int16)
+
+    if args.mode == "sharpen":
+        from v2e_jax.event_enhance import sharpen_luma_with_events
+        jax.block_until_ready(
+            sharpen_luma_with_events(_dummy_f, _dummy_counts, _dummy_counts)
+        )
+
+    elif args.mode == "hdr":
+        from v2e_jax.event_enhance import hdr_local_contrast_boost
+        jax.block_until_ready(
+            hdr_local_contrast_boost(_dummy_f, _dummy_counts, _dummy_counts)
+        )
+
+    elif args.mode == "motion":
+        from v2e_jax.direct_vo import direct_vo
+        from v2e_jax.motion_field_vis import make_motion_field_fn
+
+        K = default_intrinsics_jax(h, w)
+        _motion_field_fn = make_motion_field_fn(K, (h, w))
+
+        _xi_dummy = jnp.zeros(6, dtype=jnp.float32)
+        _inv_depth_dummy = jnp.ones((h, w), dtype=jnp.float32)
+        _loom, _lat = _motion_field_fn(_xi_dummy, _inv_depth_dummy)
+        jax.block_until_ready(_loom)
+        # Warm up direct_vo (coarse-to-fine GN — slower trace, only happens once)
+        _xi_w, _inv_w, _ = direct_vo(_dummy_f, _dummy_f, 4, 5, 2.0, K)
+        jax.block_until_ready(_xi_w)
+
     print("JIT ready. Starting capture loop.", flush=True)
 
-    win_name = "v2e_jax — left:luma  right:events"
+    mode_labels = {
+        "events":  "left:luma  right:events",
+        "sharpen": "left:luma  right:event-sharpened",
+        "hdr":     "left:luma  right:HDR local contrast (log-Retinex)",
+        "motion":  "left:luma  right:motion-colors (green=approach red=recede blue=lateral)",
+    }
+    win_name = f"v2e_jax [{args.mode}] — {mode_labels[args.mode]}"
+
     if args.display:
         cv2.namedWindow(win_name, cv2.WINDOW_NORMAL)
         cv2.resizeWindow(win_name, w * 2 + 2, h)
@@ -304,8 +399,31 @@ def main(argv: list[str] | None = None) -> int:
             if args.display:
                 on_np = np.asarray(on_k > 0)
                 off_np = np.asarray(off_k > 0)
-                vis = _make_event_overlay_bgr(luma_np, on_np, off_np)
                 n_ev = int((on_np | off_np).sum())
+
+                if args.mode == "events":
+                    vis = _vis_events(luma_np, on_np, off_np)
+
+                elif args.mode == "sharpen":
+                    luma01 = f1_jax / 255.0
+                    sharp_jax = sharpen_luma_with_events(luma01, on_k, off_k)
+                    vis = _vis_sharpen(luma_np, sharp_jax)
+
+                elif args.mode == "hdr":
+                    luma01 = f1_jax / 255.0
+                    hdr_jax = hdr_local_contrast_boost(luma01, on_k, off_k)
+                    vis = _vis_sharpen(luma_np, hdr_jax)  # same side-by-side layout
+
+                elif args.mode == "motion":
+                    xi, inv_depth, _info = direct_vo(f0_jax, f1_jax, 4, 5, 2.0, K)
+                    looming, lateral = _motion_field_fn(xi, inv_depth)
+                    vis = _vis_motion(
+                        luma_np,
+                        np.asarray(looming),
+                        np.asarray(lateral),
+                        on_np | off_np,
+                    )
+
                 fps_live = 1.0 / (frame_times[-1] + 1e-9)
                 cv2.putText(
                     vis,
@@ -333,6 +451,7 @@ def main(argv: list[str] | None = None) -> int:
         ft = np.array(frame_times) * 1000
         st = np.array(step_times) * 1000
         print(f"\n{'='*52}")
+        print(f"  Mode             : {args.mode}")
         print(f"  Frames processed : {processed}")
         print(f"  Frames dropped   : {dropped}")
         print(f"  Resolution       : {w}x{h}")
